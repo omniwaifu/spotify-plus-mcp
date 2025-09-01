@@ -25,5 +25,5 @@ dev = [
 spotify-plus-mcp = { workspace = true }
 
 [project.scripts]
-spotify-plus-mcp = "spotify_mcp:main"
+spotify-plus-mcp = "spotify_plus_mcp:main"
 spotify-plus-mcp-auth = "auth:main"
