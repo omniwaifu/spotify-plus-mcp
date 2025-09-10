@@ -7,7 +7,9 @@ MCP server for Spotify control.
 - Playback control (play, pause, skip, volume)
 - Search (tracks, albums, artists, playlists)
 - Queue management
-- Playlist management
+- Playlist management with pagination support
+  - Fetch specific pages of playlist tracks using offset
+  - Export complete playlists (all tracks) to JSON
 - Enhanced metadata from Last.fm and MusicBrainz
 - Similar artist discovery
 
@@ -64,6 +66,26 @@ Add to config:
 - Spotify Premium
 - Python 3.12+
 - uv
+
+## Playlist Export
+
+The MCP now supports full playlist export with pagination:
+
+### Get specific page of tracks
+```
+action: get_tracks
+playlist_id: <playlist_id>
+limit: 50
+offset: 100  # Start from track 101
+```
+
+### Export complete playlist
+```
+action: get_all_tracks
+playlist_id: <playlist_id>
+```
+
+This returns all tracks regardless of playlist size, handling pagination automatically.
 
 ## Troubleshooting
 

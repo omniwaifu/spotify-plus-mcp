@@ -112,14 +112,15 @@ class Search(ToolModel):
 class Playlist(ToolModel):
     """Manage Spotify playlists.
     - get: Get a list of user's playlists.
-    - get_tracks: Get tracks in a specific playlist.
+    - get_tracks: Get tracks in a specific playlist (supports pagination with offset).
+    - get_all_tracks: Get ALL tracks from a playlist (auto-pagination, useful for export).
     - add_tracks: Add tracks to a specific playlist.
     - remove_tracks: Remove tracks from a specific playlist.
     - change_details: Change details of a specific playlist.
     """
 
     action: str = Field(
-        description="Action to perform: 'get', 'get_tracks', 'add_tracks', 'remove_tracks', 'change_details'."
+        description="Action to perform: 'get', 'get_tracks', 'get_all_tracks', 'add_tracks', 'remove_tracks', 'change_details'."
     )
     playlist_id: Optional[str] = Field(
         default=None, description="ID of the playlist to manage."
@@ -130,6 +131,12 @@ class Playlist(ToolModel):
     name: Optional[str] = Field(default=None, description="New name for the playlist.")
     description: Optional[str] = Field(
         default=None, description="New description for the playlist."
+    )
+    limit: Optional[int] = Field(
+        default=50, description="Max number of tracks to return (for get_tracks action)."
+    )
+    offset: Optional[int] = Field(
+        default=0, description="The index of the first track to return (for get_tracks action, useful for pagination)."
     )
 
 
@@ -342,11 +349,35 @@ async def handle_call_tool(
                                 )
                             ]
                         tracks = spotify_client.get_playlist_tracks(
-                            arguments.get("playlist_id")
+                            playlist_id=arguments.get("playlist_id"),
+                            limit=arguments.get("limit", 50),
+                            offset=arguments.get("offset", 0)
                         )
                         return [
                             types.TextContent(
                                 type="text", text=json.dumps(tracks, indent=2)
+                            )
+                        ]
+                    case "get_all_tracks":
+                        logger.info(
+                            f"Getting ALL tracks from playlist with arguments: {arguments}"
+                        )
+                        if not arguments.get("playlist_id"):
+                            logger.error(
+                                "playlist_id is required for get_all_tracks action."
+                            )
+                            return [
+                                types.TextContent(
+                                    type="text",
+                                    text="playlist_id is required for get_all_tracks action.",
+                                )
+                            ]
+                        playlist_data = spotify_client.get_all_playlist_tracks(
+                            playlist_id=arguments.get("playlist_id")
+                        )
+                        return [
+                            types.TextContent(
+                                type="text", text=json.dumps(playlist_data, indent=2)
                             )
                         ]
                     case "add_tracks":
@@ -452,8 +483,8 @@ async def handle_call_tool(
                         return [
                             types.TextContent(
                                 type="text",
-                                text=f"Unknown playlist action: {action}."
-                                "Supported actions are: get, get_tracks, add_tracks, remove_tracks, change_details.",
+                                text=f"Unknown playlist action: {action}. "
+                                "Supported actions are: get, get_tracks, get_all_tracks, add_tracks, remove_tracks, change_details.",
                             )
                         ]
             case "Authentication":

@@ -3,6 +3,7 @@ import os
 import json
 import requests
 import base64
+import time
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
@@ -394,16 +395,86 @@ class Client:
         ]
 
     @utils.ensure_username
-    def get_playlist_tracks(self, playlist_id: str, limit=50) -> List[Dict]:
+    def get_playlist_tracks(self, playlist_id: str, limit=50, offset=0) -> List[Dict]:
         """
         Get tracks from a playlist.
         - playlist_id: ID of the playlist to get tracks from.
         - limit: Max number of tracks to return.
+        - offset: The index of the first track to return.
         """
-        playlist = self.sp.playlist(playlist_id)
-        if not playlist:
-            raise ValueError("No playlist found.")
-        return utils.parse_tracks(playlist["tracks"]["items"])
+        tracks = self.sp.playlist_tracks(playlist_id, limit=limit, offset=offset)
+        if not tracks:
+            raise ValueError("No tracks found.")
+        return utils.parse_tracks(tracks["items"])
+    
+    @utils.ensure_username
+    def get_all_playlist_tracks(self, playlist_id: str) -> Dict:
+        """
+        Get ALL tracks from a playlist, handling pagination automatically.
+        Returns a dictionary with playlist info and all tracks.
+        - playlist_id: ID of the playlist to get tracks from.
+        """
+        try:
+            # Get playlist info
+            playlist = self.sp.playlist(playlist_id, fields="name,description,owner,tracks.total")
+            if not playlist:
+                raise ValueError("No playlist found.")
+            
+            all_tracks = []
+            limit = 100  # Max allowed by Spotify API
+            offset = 0
+            total = playlist["tracks"]["total"]
+            
+            self.logger.info(f"Fetching all {total} tracks from playlist {playlist.get('name', playlist_id)}")
+            
+            # Fetch all tracks using pagination
+            max_retries = 3
+            while offset < total:
+                retry_count = 0
+                tracks_batch = None
+                
+                while retry_count < max_retries:
+                    try:
+                        tracks_batch = self.sp.playlist_tracks(playlist_id, limit=limit, offset=offset)
+                        break
+                    except Exception as e:
+                        retry_count += 1
+                        self.logger.error(f"Error fetching tracks (attempt {retry_count}/{max_retries}): {e}")
+                        if retry_count >= max_retries:
+                            self.logger.error(f"Failed to fetch tracks at offset {offset} after {max_retries} attempts")
+                            # Return partial results rather than failing completely
+                            return {
+                                "playlist_id": playlist_id,
+                                "name": playlist.get("name", "Unknown"),
+                                "description": playlist.get("description", ""),
+                                "owner": playlist.get("owner", {}).get("display_name", "Unknown"),
+                                "total_tracks": total,
+                                "tracks": all_tracks,
+                                "warning": f"Only fetched {len(all_tracks)} of {total} tracks due to API errors"
+                            }
+                        # Wait a bit before retrying (exponential backoff)
+                        time.sleep(2 ** retry_count)
+                
+                if tracks_batch and tracks_batch.get("items"):
+                    parsed_tracks = utils.parse_tracks(tracks_batch["items"])
+                    all_tracks.extend(parsed_tracks)
+                    offset += limit
+                    self.logger.info(f"Fetched {min(offset, total)}/{total} tracks")
+                else:
+                    self.logger.warning(f"No tracks returned at offset {offset}, stopping pagination")
+                    break
+            
+            return {
+                "playlist_id": playlist_id,
+                "name": playlist.get("name", "Unknown"),
+                "description": playlist.get("description", ""),
+                "owner": playlist.get("owner", {}).get("display_name", "Unknown"),
+                "total_tracks": total,
+                "tracks": all_tracks
+            }
+        except Exception as e:
+            self.logger.error(f"Error fetching playlist tracks: {e}")
+            raise
 
     @utils.ensure_username
     def add_tracks_to_playlist(
